@@ -1,0 +1,39 @@
+name: Auto Tag Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Crucial to get commit history
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-node-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install openai requests
+
+      - name: Run Tagging Script
+        id: determine_tag
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }} # e.g., OpenAI, Anthropic, Gemini
+        run: |
+          NEW_TAG=$(python .github/scripts/suggest_tag.py)
+          echo "next_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Tag
+        if: steps.determine_tag.outputs.next_tag != 'none'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Bot"
+          git tag ${{ steps.determine_tag.outputs.next_tag }}
+          git push origin ${{ steps.determine_tag.outputs.next_tag }}
