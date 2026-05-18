@@ -1,31 +1,25 @@
-import os
 import subprocess
-from openai import OpenAI
+import sys
 
-# 1. Get commits since last tag
-try:
-    latest_tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode().strip()
-    commit_logs = subprocess.check_output(["git", "log", f"{latest_tag}..HEAD", "--oneline"]).decode().strip()
-except Exception:
-    # Fallback if no tags exist yet
-    latest_tag = "v0.0.0"
-    commit_logs = subprocess.check_output(["git", "log", "--oneline"]).decode().strip()
+def get_git_history():
+    """Fetches the latest tag and the commit messages since that tag."""
+    try:
+        # Attempt to find the most recent tag
+        latest_tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"]).decode().strip()
+        
+        # Get the commit logs between the latest tag and now
+        commits = subprocess.check_output(["git", "log", f"{latest_tag}..HEAD", "--oneline"]).decode().strip()
+        
+    except subprocess.CalledProcessError:
+        # If the repository has zero tags, catch the error and fallback
+        latest_tag = "v0.0.0"
+        commits = subprocess.check_output(["git", "log", "--oneline"]).decode().strip()
+        
+    return latest_tag, commits
 
-if not commit_logs:
-    print("none")
-    exit()
-
-# 2. Call the cheap LLM
-client = OpenAI(api_key=os.environ.get("LLM_API_KEY"))
-
-response = client.chat.completions.create(
-    model="gpt-4o-mini", # Extremely cheap model
-    messages=[
-        {"role": "system", "content": "You are a SemVer versioning bot. Output ONLY the next version tag based on commits. No explanations."},
-        {"role": "user", "content": f"Current tag: {latest_tag}\nNew commits:\n{commit_logs}\nWhat is the next tag?"}
-    ],
-    max_tokens=10,
-    temperature=0
-)
-
-print(response.choices[0].message.content.strip())
+if __name__ == "__main__":
+    current_tag, commit_logs = get_git_history()
+    
+    # For now, we will just print them to test that our observation tool works
+    print(f"Current Tag: {current_tag}")
+    print(f"New Commits:\n{commit_logs}")
