@@ -1,3 +1,3 @@
-""""
-Dummy file
-""""
+"""
+Dummy file for fake app
+"""
