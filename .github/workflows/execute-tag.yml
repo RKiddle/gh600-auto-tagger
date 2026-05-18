@@ -1,0 +1,47 @@
+name: Agentic Auto Tag (Execute)
+
+on:
+  issue_comment:
+    types: [created] # Triggers whenever any comment is posted on an issue or PR
+
+# GH-600 Domain: Principle of Least Privilege
+# Notice this workflow gets 'contents: write' because it ACTUALLY pushes the tag.
+# Our planning workflow only had 'contents: read'.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  execute-approval:
+    # HITL Guardrail: ONLY run if the comment is on a PR AND starts with our approval command
+    if: ${{ github.event.issue.pull_request && startsWith(github.event.comment.body, '/approve-tag') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Tag from Comment
+        id: parse_command
+        run: |
+          # The comment body looks like: /approve-tag v0.1.1
+          # We use awk to grab the second word (the tag itself)
+          TAG_NAME=$(echo "${{ github.event.comment.body }}" | awk '{print $2}')
+          echo "tag_to_apply=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Create and Push GitHub Tag
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Bot"
+          
+          # Create and push the tag extracted from the human's comment
+          git tag ${{ steps.parse_command.outputs.tag_to_apply }}
+          git push origin ${{ steps.parse_command.outputs.tag_to_apply }}
+
+      - name: Confirm Execution to Human
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.issue.number }} \
+            --body "✅ **Agent Execution Complete:** Tag \`${{ steps.parse_command.outputs.tag_to_apply }}\` has been successfully pushed to the repository."
