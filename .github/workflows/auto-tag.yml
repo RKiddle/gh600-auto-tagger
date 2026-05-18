@@ -1,18 +1,22 @@
-name: Auto Tag Release
+name: Agentic Auto Tag (Plan & Propose)
 
 on:
-  push:
-    branches:
-      - main
+  pull_request:
+    types: [opened, synchronize] # Runs when a PR is created or updated
+
+# GH-600 Domain: Principle of Least Privilege
+permissions:
+  contents: read
+  pull-requests: write # Required to post the HITL comment
 
 jobs:
-  tag:
+  plan:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Crucial to get commit history
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,18 +26,40 @@ jobs:
       - name: Install Dependencies
         run: pip install google-genai requests
 
-      - name: Run Tagging Script
-        id: determine_tag
+      - name: Run Agent Reasoning
+        id: agent
         env:
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }} # e.g., OpenAI, Anthropic, Gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          NEW_TAG=$(python .github/scripts/suggest_tag.py)
+          # Capture stderr (JSON) to a file, and stdout (Tag) to a variable
+          python .github/scripts/suggest_tag.py 2> agent_reasoning.json > stdout.txt
+          
+          NEW_TAG=$(cat stdout.txt)
           echo "next_tag=$NEW_TAG" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Tag
-        if: steps.determine_tag.outputs.next_tag != 'none'
+      - name: Post HITL Comment to PR
+        if: steps.agent.outputs.next_tag != 'none'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Built-in GitHub Action token
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action Bot"
-          git tag ${{ steps.determine_tag.outputs.next_tag }}
-          git push origin ${{ steps.determine_tag.outputs.next_tag }}
+          # Read the JSON file into a variable
+          REASONING=$(cat agent_reasoning.json)
+          
+          # Use the GitHub CLI to post the agent's plan to the PR
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "🤖 **Agentic Version Planner**
+            
+            I have analyzed the commits and recommend the following Semantic Version tag: **${{ steps.agent.outputs.next_tag }}**
+            
+            <details>
+            <summary>Click to view Agent Reasoning (JSON)</summary>
+            
+            \`\`\`json
+            $REASONING
+            \`\`\`
+            </details>
+            
+            ---
+            **Human-in-the-Loop Action Required:**
+            If you agree with this plan, reply to this PR with exactly:
+            \`/approve-tag ${{ steps.agent.outputs.next_tag }}\`"
